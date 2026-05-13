@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MockPrep — AI Interview Coach</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== SETUP SCREEN ===== -->
+  <div id="setup-screen" class="screen active">
+    <div class="setup-header">
+      <div class="logo">
+        <span class="logo-icon">🎯</span>
+        <span class="logo-text">MockPrep</span>
+      </div>
+      <p class="tagline">AI-powered mock interviews tailored to your role</p>
+    </div>
+
+    <div class="setup-card">
+      <h2 class="section-title">Interview Setup</h2>
+
+      <!-- API Key -->
+      <div class="form-group">
+        <label for="api-key">
+          <span class="label-icon">🔑</span>
+          Anthropic API Key
+        </label>
+        <div class="input-wrapper">
+          <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off" />
+          <button class="toggle-key" id="toggle-key" title="Show/hide key">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <span class="field-hint">Your key is never stored — only used for this session.</span>
+      </div>
+
+      <!-- Job Description URL -->
+      <div class="form-group">
+        <label for="job-url">
+          <span class="label-icon">🔗</span>
+          Job Description URL
+        </label>
+        <input type="url" id="job-url" placeholder="https://company.com/careers/job-title" />
+        <span class="field-hint">Paste the link to the job posting you're interviewing for.</span>
+      </div>
+
+      <div class="form-row">
+        <!-- Question Type -->
+        <div class="form-group">
+          <label>
+            <span class="label-icon">❓</span>
+            Question Type
+          </label>
+          <div class="button-group" id="question-type-group">
+            <button class="btn-option" data-value="behavioral">Behavioral</button>
+            <button class="btn-option active" data-value="mix">Mix of Both</button>
+            <button class="btn-option" data-value="technical">Technical</button>
+          </div>
+        </div>
+
+        <!-- Number of Questions -->
+        <div class="form-group">
+          <label>
+            <span class="label-icon">📝</span>
+            Number of Questions
+          </label>
+          <div class="button-group" id="num-questions-group">
+            <button class="btn-option" data-value="5">5</button>
+            <button class="btn-option active" data-value="10">10</button>
+            <button class="btn-option" data-value="15">15</button>
+            <button class="btn-option" data-value="20">20</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <!-- Time Per Question -->
+        <div class="form-group">
+          <label>
+            <span class="label-icon">⏱️</span>
+            Time Per Question
+          </label>
+          <div class="button-group" id="time-per-question-group">
+            <button class="btn-option" data-value="1">1 min</button>
+            <button class="btn-option active" data-value="2">2 min</button>
+            <button class="btn-option" data-value="3">3 min</button>
+            <button class="btn-option" data-value="4">4 min</button>
+            <button class="btn-option" data-value="5">5 min</button>
+          </div>
+        </div>
+
+        <!-- Total Interview Time -->
+        <div class="form-group">
+          <label>
+            <span class="label-icon">🕐</span>
+            Total Interview Time
+          </label>
+          <div class="button-group" id="total-time-group">
+            <button class="btn-option" data-value="15">15 min</button>
+            <button class="btn-option active" data-value="30">30 min</button>
+            <button class="btn-option" data-value="45">45 min</button>
+            <button class="btn-option" data-value="60">60 min</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feedback Timing -->
+      <div class="form-group">
+        <label>
+          <span class="label-icon">💬</span>
+          When to Show Feedback
+        </label>
+        <div class="feedback-options" id="feedback-timing-group">
+          <label class="radio-card active" data-value="after_each">
+            <input type="radio" name="feedback-timing" value="after_each" checked />
+            <div class="radio-card-content">
+              <span class="radio-card-icon">⚡</span>
+              <div>
+                <strong>After Each Question</strong>
+                <p>See feedback immediately before moving on</p>
+              </div>
+            </div>
+          </label>
+          <label class="radio-card" data-value="end_only">
+            <input type="radio" name="feedback-timing" value="end_only" />
+            <div class="radio-card-content">
+              <span class="radio-card-icon">📊</span>
+              <div>
+                <strong>At the End Only</strong>
+                <p>Complete the interview then see all results</p>
+              </div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <div id="setup-error" class="error-banner hidden"></div>
+
+      <button id="start-btn" class="btn-primary btn-large">
+        <span>Start Interview</span>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== LOADING SCREEN ===== -->
+  <div id="loading-screen" class="screen">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <h2 id="loading-title">Preparing your interview…</h2>
+      <p id="loading-subtitle">Analyzing the job description and crafting personalized questions</p>
+      <div class="loading-steps">
+        <div class="loading-step active" id="step-fetch">
+          <span class="step-dot"></span>
+          <span>Fetching job description</span>
+        </div>
+        <div class="loading-step" id="step-generate">
+          <span class="step-dot"></span>
+          <span>Generating questions with AI</span>
+        </div>
+        <div class="loading-step" id="step-ready">
+          <span class="step-dot"></span>
+          <span>Finalizing your interview</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== INTERVIEW SCREEN ===== -->
+  <div id="interview-screen" class="screen">
+    <!-- Top bar -->
+    <div class="interview-topbar">
+      <div class="topbar-left">
+        <span class="logo-sm">🎯 MockPrep</span>
+        <span id="interview-progress">Question 1 of 10</span>
+      </div>
+      <div class="topbar-center">
+        <div class="total-timer" id="total-timer-display">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span id="total-timer-text">30:00</span>
+          <span class="timer-label">total remaining</span>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <button id="end-interview-btn" class="btn-ghost btn-sm">End Interview</button>
+      </div>
+    </div>
+
+    <!-- Main interview area -->
+    <div class="interview-main">
+      <div class="question-card">
+        <!-- Question timer -->
+        <div class="question-timer-row">
+          <div class="question-meta">
+            <span id="question-type-badge" class="badge">Behavioral</span>
+            <span id="question-number-label">Question 1</span>
+          </div>
+          <div class="question-timer-block">
+            <div class="question-timer-bar-wrap">
+              <div class="question-timer-bar" id="question-timer-bar"></div>
+            </div>
+            <span id="question-timer-text" class="question-timer-text">2:00</span>
+          </div>
+        </div>
+
+        <!-- Question text -->
+        <div class="question-text-wrap">
+          <p id="question-text" class="question-text">Loading question…</p>
+        </div>
+
+        <!-- Answer area -->
+        <div class="answer-area">
+          <label for="answer-input" class="answer-label">Your Answer</label>
+          <textarea
+            id="answer-input"
+            class="answer-textarea"
+            placeholder="Type your answer here… Think about specific examples, results, and what you learned."
+            rows="7"
+          ></textarea>
+          <div class="answer-footer">
+            <span id="word-count" class="word-count">0 words</span>
+            <button id="submit-answer-btn" class="btn-primary">
+              Submit Answer
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Skipped / progress indicator -->
+      <div class="progress-dots" id="progress-dots"></div>
+    </div>
+  </div>
+
+  <!-- ===== PER-QUESTION FEEDBACK SCREEN ===== -->
+  <div id="feedback-screen" class="screen">
+    <div class="interview-topbar">
+      <div class="topbar-left">
+        <span class="logo-sm">🎯 MockPrep</span>
+        <span id="feedback-progress-label">Feedback — Question 1 of 10</span>
+      </div>
+      <div class="topbar-center">
+        <div class="total-timer" id="feedback-total-timer">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <span id="feedback-timer-text">30:00</span>
+          <span class="timer-label">total remaining</span>
+        </div>
+      </div>
+      <div class="topbar-right"></div>
+    </div>
+
+    <div class="feedback-main">
+      <div class="feedback-card">
+        <div class="feedback-header">
+          <div class="feedback-score-circle" id="feedback-score-circle">
+            <span id="feedback-score-num">8</span>
+            <span class="score-denom">/10</span>
+          </div>
+          <div>
+            <h2 class="feedback-card-title">Question Feedback</h2>
+            <p id="feedback-question-recap" class="feedback-question-recap">Question text here…</p>
+          </div>
+        </div>
+
+        <div class="feedback-answer-recap">
+          <h4>Your Answer</h4>
+          <p id="feedback-answer-recap"></p>
+        </div>
+
+        <div class="feedback-sections">
+          <div class="feedback-section went-well">
+            <div class="feedback-section-header">
+              <span class="fs-icon">✅</span>
+              <h3>What You Did Well</h3>
+            </div>
+            <p id="feedback-well"></p>
+          </div>
+          <div class="feedback-section missed">
+            <div class="feedback-section-header">
+              <span class="fs-icon">⚠️</span>
+              <h3>What Was Missed</h3>
+            </div>
+            <p id="feedback-missed"></p>
+          </div>
+          <div class="feedback-section improve">
+            <div class="feedback-section-header">
+              <span class="fs-icon">🚀</span>
+              <h3>How to Improve</h3>
+            </div>
+            <p id="feedback-improve"></p>
+          </div>
+        </div>
+
+        <button id="next-question-btn" class="btn-primary btn-large btn-full">
+          <span id="next-btn-label">Next Question</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== RESULTS SCREEN ===== -->
+  <div id="results-screen" class="screen">
+    <div class="results-header">
+      <div class="logo">
+        <span class="logo-icon">🎯</span>
+        <span class="logo-text">MockPrep</span>
+      </div>
+    </div>
+
+    <div class="results-main">
+      <!-- Score overview card -->
+      <div class="results-overview-card">
+        <div class="results-score-block">
+          <div class="results-score-ring">
+            <svg viewBox="0 0 120 120" class="score-ring-svg">
+              <circle class="score-ring-bg" cx="60" cy="60" r="50"/>
+              <circle class="score-ring-fill" id="score-ring-fill" cx="60" cy="60" r="50"
+                stroke-dasharray="314"
+                stroke-dashoffset="314"/>
+            </svg>
+            <div class="score-ring-text">
+              <span id="results-score-pct" class="score-pct">0%</span>
+              <span class="score-label">Score</span>
+            </div>
+          </div>
+          <div class="results-score-details">
+            <h2 id="results-grade-label" class="results-grade">Great Job!</h2>
+            <div class="results-stats">
+              <div class="stat-item">
+                <span id="stat-questions-answered" class="stat-value">10</span>
+                <span class="stat-label">Questions Answered</span>
+              </div>
+              <div class="stat-item">
+                <span id="stat-avg-score" class="stat-value">7.5</span>
+                <span class="stat-label">Avg Score /10</span>
+              </div>
+              <div class="stat-item">
+                <span id="stat-time-used" class="stat-value">18:32</span>
+                <span class="stat-label">Time Used</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="results-summary-block">
+          <h3>Performance Summary</h3>
+          <p id="results-summary-text" class="results-summary-text">Loading…</p>
+        </div>
+      </div>
+
+      <!-- Loading feedback (end-only mode) -->
+      <div id="results-loading" class="results-loading hidden">
+        <div class="loading-spinner small"></div>
+        <p>Generating detailed feedback for all your answers…</p>
+      </div>
+
+      <!-- Per-question breakdown -->
+      <div class="results-breakdown">
+        <h2 class="breakdown-title">Question Breakdown</h2>
+        <div id="results-questions-list" class="results-questions-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="results-actions">
+        <button id="new-interview-btn" class="btn-primary btn-large">
+          Start New Interview
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -215,18 +215,6 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
   <div class="setup-card">
     <h2 class="section-title">Interview Setup</h2>
     <div class="form-group">
-      <label for="api-key"><span class="label-icon">🔑</span> Anthropic API Key</label>
-      <div class="input-wrapper">
-        <input type="password" id="api-key" placeholder="sk-ant-..." autocomplete="off" />
-        <button class="toggle-key" id="toggle-key" title="Show/hide key">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
-          </svg>
-        </button>
-      </div>
-      <span class="field-hint">Your key is never stored — only used for this session.</span>
-    </div>
-    <div class="form-group">
       <label for="job-url"><span class="label-icon">🔗</span> Job Description URL</label>
       <input type="url" id="job-url" placeholder="https://company.com/careers/job-title" />
       <span class="field-hint">Paste the link to the job posting you are interviewing for.</span>
@@ -462,11 +450,14 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
 </div>
 
 <script>
-const CLAUDE_API = 'https://api.anthropic.com/v1/messages';
-const CLAUDE_MODEL = 'claude-opus-4-7';
+// ── Supabase config — replace these two values with your project's details ──
+const SUPABASE_URL      = 'https://YOUR_PROJECT_REF.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const EDGE_FN = SUPABASE_URL + '/functions/v1/generate-interview';
 
+// ── App state ───────────────────────────────────────────────────────────────
 const state = {
-  apiKey:'', jobUrl:'', jobContent:'', questionType:'mix', numQuestions:10,
+  jobUrl:'', jobContent:'', questionType:'mix', numQuestions:10,
   timePerQuestion:2, totalTime:30, feedbackTiming:'after_each',
   questions:[], answers:[], feedbacks:[],
   currentIndex:0, questionStarted:null, interviewStarted:null,
@@ -483,29 +474,22 @@ function showScreen(id) {
   window.scrollTo(0,0);
 }
 
-async function callClaude(apiKey, messages, sys) {
-  const res = await fetch(CLAUDE_API, {
+// ── Edge Function caller ────────────────────────────────────────────────────
+async function callEdge(action, params) {
+  const res = await fetch(EDGE_FN, {
     method: 'POST',
     headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
     },
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: 4096, system: sys, messages }),
+    body: JSON.stringify({ action, ...params }),
   });
-  if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(e?.error?.message || 'API error ' + res.status);
-  }
-  const d = await res.json();
-  return d.content[0].text;
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || 'Edge Function error ' + res.status);
+  return data;
 }
 
-function parseJSON(text) {
-  return JSON.parse(text.replace(/```(?:json)?/gi,'').replace(/```/g,'').trim());
-}
-
+// ── Setup ───────────────────────────────────────────────────────────────────
 function initSetup() {
   document.querySelectorAll('.btn-option').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -519,15 +503,11 @@ function initSetup() {
       card.classList.add('active');
     });
   });
-  $el('toggle-key').addEventListener('click', () => {
-    const i = $el('api-key'); i.type = i.type === 'password' ? 'text' : 'password';
-  });
   $el('start-btn').addEventListener('click', handleStart);
 }
 
 function getVals() {
   return {
-    apiKey: $el('api-key').value.trim(),
     jobUrl: $el('job-url').value.trim(),
     questionType: document.querySelector('#question-type-group .btn-option.active')?.dataset.value || 'mix',
     numQuestions: parseInt(document.querySelector('#num-questions-group .btn-option.active')?.dataset.value || 10),
@@ -542,7 +522,6 @@ function showErr(msg) { const e = $el('setup-error'); e.textContent = msg; e.cla
 async function handleStart() {
   $el('setup-error').classList.add('hidden');
   const v = getVals();
-  if (!v.apiKey.startsWith('sk-')) return showErr('Please enter a valid Anthropic API key (starts with sk-).');
   if (!v.jobUrl) return showErr('Please enter the job description URL.');
   Object.assign(state, v);
   state.questions = []; state.answers = []; state.feedbacks = []; state.currentIndex = 0; state.overallSummary = '';
@@ -582,20 +561,16 @@ async function fetchJob(url) {
 }
 
 async function genQuestions() {
-  const typeMap = {
-    behavioral: 'behavioral (STAR-format) questions only',
-    technical: 'technical/role-specific questions only',
-    mix: 'a mix of behavioral (STAR-format) and technical/role-specific questions',
-  };
-  const raw = await callClaude(state.apiKey, [{
-    role:'user',
-    content: 'Generate exactly ' + state.numQuestions + ' interview questions based on this job description.\nQuestion type: ' + typeMap[state.questionType] + '\n\nJob Description:\n' + state.jobContent + '\n\nReturn ONLY a JSON object like this:\n{"questions":[{"id":1,"type":"behavioral","question":"Tell me about a time..."}]}\n\nRules: type must be "behavioral" or "technical". Make questions realistic and relevant. No duplicates.',
-  }], 'You are an expert technical recruiter and interview coach. Always respond with valid JSON only — no markdown, no extra text.');
-  const parsed = parseJSON(raw);
-  if (!parsed.questions || !Array.isArray(parsed.questions)) throw new Error('Could not parse questions from AI response.');
-  return parsed.questions.slice(0, state.numQuestions);
+  const data = await callEdge('generate_questions', {
+    jobContent: state.jobContent,
+    questionType: state.questionType,
+    numQuestions: state.numQuestions,
+  });
+  if (!data.questions || !Array.isArray(data.questions)) throw new Error('Could not parse questions from AI response.');
+  return data.questions.slice(0, state.numQuestions);
 }
 
+// ── Interview ───────────────────────────────────────────────────────────────
 function startInterview() {
   state.currentIndex = 0; state.interviewStarted = Date.now(); state.totalSecsLeft = state.totalTime * 60;
   buildDots(); showScreen('interview-screen'); displayQ(0); startTotalTimer();
@@ -694,11 +669,11 @@ async function handleSubmit() {
 }
 
 async function getFeedback(q, answer) {
-  const raw = await callClaude(state.apiKey, [{
-    role:'user',
-    content: 'Evaluate this interview answer:\n\nQuestion: ' + q.question + '\nType: ' + q.type + '\nAnswer: ' + (answer||'(No answer provided)') + '\n\nJob Context:\n' + state.jobContent.slice(0,2000) + '\n\nReturn ONLY JSON like:\n{"questionId":' + q.id + ',"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}\n\nScoring: 1-3 poor, 4-6 average, 7-8 good, 9-10 excellent.',
-  }], 'You are an expert interview coach. Always respond with valid JSON only — no markdown, no extra text.');
-  return parseJSON(raw);
+  return await callEdge('get_feedback', {
+    question: q,
+    answer: answer || '(No answer provided)',
+    jobContent: state.jobContent,
+  });
 }
 
 function showFeedbackScreen(fb, q, answer) {
@@ -729,6 +704,7 @@ function endInterview(timeUp) {
   buildResults();
 }
 
+// ── Results ─────────────────────────────────────────────────────────────────
 async function buildResults() {
   showScreen('results-screen');
   const answered = state.answers.filter(a=>!a.skipped).length;
@@ -749,17 +725,14 @@ async function buildResults() {
 }
 
 async function genAllFeedback() {
-  const pairs = state.questions.map((q,i) => {
-    const a = state.answers.find(a=>a.questionId===q.id);
-    return 'Q' + (i+1) + ' (' + q.type + '): ' + q.question + '\nAnswer: ' + (a?.answer||'(No answer)');
-  }).join('\n\n---\n\n');
-  const raw = await callClaude(state.apiKey, [{
-    role:'user',
-    content: 'Evaluate all ' + state.numQuestions + ' interview answers.\n\nJob Context:\n' + state.jobContent.slice(0,2000) + '\n\nQ&A:\n' + pairs + '\n\nReturn ONLY JSON:\n{"overall_summary":"...","feedbacks":[{"questionId":1,"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}]}\n\nOne feedback per question in order. Scoring: 1-3 poor, 4-6 avg, 7-8 good, 9-10 excellent.',
-  }], 'You are an expert interview coach. Always respond with valid JSON only — no markdown, no extra text.');
-  const p = parseJSON(raw);
-  if (p.feedbacks) state.feedbacks = p.feedbacks;
-  if (p.overall_summary) state.overallSummary = p.overall_summary;
+  const data = await callEdge('get_all_feedback', {
+    questions: state.questions,
+    answers: state.answers,
+    jobContent: state.jobContent,
+    numQuestions: state.numQuestions,
+  });
+  if (data.feedbacks) state.feedbacks = data.feedbacks;
+  if (data.overall_summary) state.overallSummary = data.overall_summary;
 }
 
 function avgScore() {
@@ -784,10 +757,8 @@ async function renderResults() {
   setTimeout(() => { ring.style.strokeDashoffset = 314-(pct/100)*314; }, 100);
   if (!state.overallSummary) {
     try {
-      state.overallSummary = (await callClaude(state.apiKey,[{
-        role:'user',
-        content:'Write a 3-4 sentence performance summary for a candidate who scored ' + avg.toFixed(1) + '/10 average across ' + state.numQuestions + ' interview questions. Mention key strengths and areas to improve. Job context: ' + state.jobContent.slice(0,500),
-      }],'You are an expert interview coach. Be concise and specific.')).trim();
+      const data = await callEdge('get_summary', { avg, numQuestions: state.numQuestions, jobContent: state.jobContent });
+      state.overallSummary = data.summary;
     } catch(_) {
       state.overallSummary = 'You completed ' + state.answers.filter(a=>!a.skipped).length + ' of ' + state.numQuestions + ' questions with an average score of ' + avg.toFixed(1) + '/10.';
     }

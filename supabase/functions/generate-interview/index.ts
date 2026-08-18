@@ -39,6 +39,7 @@ function parseJSON(text: string): unknown {
   return JSON.parse(clean);
 }
 
+// ── Action handlers ────────────────────────────────────────────────────────
 async function generateQuestions(
   apiKey: string,
   params: { jobContent: string; questionType: string; numQuestions: number; resumeContent?: string },
@@ -55,17 +56,19 @@ async function generateQuestions(
 
   const raw = await callClaude(
     apiKey,
-    [{
-      role: "user",
-      content:
-        `Generate exactly ${params.numQuestions} interview questions based on this job description.\n` +
-        `Question type: ${typeMap[params.questionType] ?? typeMap.mix}\n\n` +
-        `Job Description:\n${params.jobContent}` +
-        resumeSection + `\n\n` +
-        `Return ONLY a JSON object:\n` +
-        `{"questions":[{"id":1,"type":"behavioral","question":"Tell me about a time..."}]}\n\n` +
-        `Rules: type must be "behavioral" or "technical". Questions must be realistic and relevant. No duplicates.`,
-    }],
+    [
+      {
+        role: "user",
+        content:
+          `Generate exactly ${params.numQuestions} interview questions based on this job description.\n` +
+          `Question type: ${typeMap[params.questionType] ?? typeMap.mix}\n\n` +
+          `Job Description:\n${params.jobContent}` +
+          resumeSection + `\n\n` +
+          `Return ONLY a JSON object:\n` +
+          `{"questions":[{"id":1,"type":"behavioral","question":"Tell me about a time..."}]}\n\n` +
+          `Rules: type must be "behavioral" or "technical". Questions must be realistic and relevant. No duplicates.`,
+      },
+    ],
     "You are an expert technical recruiter and interview coach. Always respond with valid JSON only — no markdown, no extra text.",
   );
 
@@ -91,19 +94,21 @@ async function getFeedback(
 
   const raw = await callClaude(
     apiKey,
-    [{
-      role: "user",
-      content:
-        `Evaluate this interview answer:\n\n` +
-        `Question: ${params.question.question}\n` +
-        `Type: ${params.question.type}\n` +
-        `Answer: ${params.answer || "(No answer provided)"}\n\n` +
-        `Job Context:\n${params.jobContent.slice(0, 2000)}` +
-        resumeCtx + `\n\n` +
-        `Return ONLY JSON:\n` +
-        `{"questionId":${params.question.id},"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}\n\n` +
-        `Scoring: 1-3 poor, 4-6 average, 7-8 good, 9-10 excellent.`,
-    }],
+    [
+      {
+        role: "user",
+        content:
+          `Evaluate this interview answer:\n\n` +
+          `Question: ${params.question.question}\n` +
+          `Type: ${params.question.type}\n` +
+          `Answer: ${params.answer || "(No answer provided)"}\n\n` +
+          `Job Context:\n${params.jobContent.slice(0, 2000)}` +
+          resumeCtx + `\n\n` +
+          `Return ONLY JSON:\n` +
+          `{"questionId":${params.question.id},"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}\n\n` +
+          `Scoring: 1-3 poor, 4-6 average, 7-8 good, 9-10 excellent.`,
+      },
+    ],
     "You are an expert interview coach. Always respond with valid JSON only — no markdown, no extra text.",
   );
 
@@ -133,17 +138,19 @@ async function getAllFeedback(
 
   const raw = await callClaude(
     apiKey,
-    [{
-      role: "user",
-      content:
-        `Evaluate all ${params.numQuestions} interview answers.\n\n` +
-        `Job Context:\n${params.jobContent.slice(0, 2000)}\n` +
-        resumeCtx + `\n` +
-        `Q&A:\n${pairs}\n\n` +
-        `Return ONLY JSON:\n` +
-        `{"overall_summary":"...","feedbacks":[{"questionId":1,"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}]}\n\n` +
-        `One feedback per question in order. Scoring: 1-3 poor, 4-6 avg, 7-8 good, 9-10 excellent.`,
-    }],
+    [
+      {
+        role: "user",
+        content:
+          `Evaluate all ${params.numQuestions} interview answers.\n\n` +
+          `Job Context:\n${params.jobContent.slice(0, 2000)}\n` +
+          resumeCtx + `\n` +
+          `Q&A:\n${pairs}\n\n` +
+          `Return ONLY JSON:\n` +
+          `{"overall_summary":"...","feedbacks":[{"questionId":1,"score":7,"what_went_well":"...","what_was_missed":"...","how_to_improve":"..."}]}\n\n` +
+          `One feedback per question in order. Scoring: 1-3 poor, 4-6 avg, 7-8 good, 9-10 excellent.`,
+      },
+    ],
     "You are an expert interview coach. Always respond with valid JSON only — no markdown, no extra text.",
     8192,
   );
@@ -157,14 +164,16 @@ async function getSummary(
 ) {
   const text = await callClaude(
     apiKey,
-    [{
-      role: "user",
-      content:
-        `Write a 3-4 sentence performance summary for a candidate who scored ${params.avg.toFixed(1)}/10 ` +
-        `average across ${params.numQuestions} interview questions. ` +
-        `Mention key strengths and areas to improve. ` +
-        `Job context: ${params.jobContent.slice(0, 500)}`,
-    }],
+    [
+      {
+        role: "user",
+        content:
+          `Write a 3-4 sentence performance summary for a candidate who scored ${params.avg.toFixed(1)}/10 ` +
+          `average across ${params.numQuestions} interview questions. ` +
+          `Mention key strengths and areas to improve. ` +
+          `Job context: ${params.jobContent.slice(0, 500)}`,
+      },
+    ],
     "You are an expert interview coach. Be concise and specific.",
     512,
   );
@@ -186,25 +195,28 @@ async function getSampleAnswer(
 
   const raw = await callClaude(
     apiKey,
-    [{
-      role: "user",
-      content:
-        `Write a strong example answer (score: 9/10) for this interview question.\n\n` +
-        `Question: ${params.question.question}\n` +
-        `Type: ${params.question.type}\n` +
-        `Job Context: ${params.jobContent.slice(0, 800)}` +
-        resumeCtx + `\n\n` +
-        (isBehavioral
-          ? `Use the STAR method clearly. Be specific with realistic situational details, concrete metrics, and outcomes. Avoid vague phrases. 200-280 words.\n\n`
-          : `Be specific and demonstrate technical depth. Explain your reasoning and trade-offs clearly. 200-280 words.\n\n`) +
-        `Return ONLY JSON: {"sample_answer": "..."}`,
-    }],
+    [
+      {
+        role: "user",
+        content:
+          `Write a strong example answer (score: 9/10) for this interview question.\n\n` +
+          `Question: ${params.question.question}\n` +
+          `Type: ${params.question.type}\n` +
+          `Job Context: ${params.jobContent.slice(0, 800)}` +
+          resumeCtx + `\n\n` +
+          (isBehavioral
+            ? `Use the STAR method clearly. Be specific with realistic situational details, concrete metrics, and outcomes. Avoid vague phrases. 200-280 words.\n\n`
+            : `Be specific and demonstrate technical depth. Explain your reasoning and trade-offs clearly. 200-280 words.\n\n`) +
+          `Return ONLY JSON: {"sample_answer": "..."}`,
+      },
+    ],
     "You are an expert interview coach. Always respond with valid JSON only — no markdown, no extra text.",
     1024,
   );
   return parseJSON(raw);
 }
 
+// ── Main handler ───────────────────────────────────────────────────────────
 serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: cors });

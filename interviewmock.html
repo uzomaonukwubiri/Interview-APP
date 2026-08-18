@@ -456,6 +456,8 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
       <div class="loading-step" id="step-generate"><span class="step-dot"></span><span>Generating questions with AI</span></div>
       <div class="loading-step" id="step-ready"><span class="step-dot"></span><span>Finalizing your interview</span></div>
     </div>
+    <div id="loading-error" style="display:none;margin-top:20px;padding:14px 16px;background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;color:#b91c1c;font-size:.88rem;line-height:1.5;text-align:left;"></div>
+    <button id="loading-back-btn" onclick="showScreen('setup-screen')" style="display:none;margin-top:16px;padding:10px 20px;background:var(--primary);color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:.9rem;">← Back to Setup</button>
   </div>
 </div>
 
@@ -703,13 +705,25 @@ function showToast(msg, duration=3000) {
 }
 
 async function callEdge(action, params) {
-  const res = await fetch(EDGE_FN, {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON_KEY},
-    body:JSON.stringify({action,...params}),
-  });
-  const data = await res.json();
-  if (!res.ok || data.error) throw new Error(data.error || 'Edge Function error '+res.status);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 90000);
+  let res;
+  try {
+    res = await fetch(EDGE_FN, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+SUPABASE_ANON_KEY},
+      body:JSON.stringify({action,...params}),
+      signal: ctrl.signal,
+    });
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Request timed out after 90 seconds. The AI may be overloaded — please try again.');
+    throw new Error('Network error: ' + e.message + '. Check that your Supabase Edge Function is deployed.');
+  }
+  clearTimeout(timer);
+  let data;
+  try { data = await res.json(); } catch(_) { throw new Error('Edge Function returned invalid response (status '+res.status+'). Try redeploying the function.'); }
+  if (!res.ok || data.error) throw new Error(data.error || 'Edge Function error ' + res.status);
   return data;
 }
 
@@ -831,8 +845,17 @@ async function handleStart() {
     setStep('step-ready','done');
     startInterview();
   } catch(err) {
-    showScreen('setup-screen');
-    showErr('Error: '+err.message);
+    console.error('Interview setup failed:', err);
+    const errEl = $el('loading-error');
+    const backBtn = $el('loading-back-btn');
+    if (errEl) {
+      errEl.textContent = 'Error: ' + err.message;
+      errEl.style.display = 'block';
+      if (backBtn) backBtn.style.display = 'inline-block';
+    } else {
+      showScreen('setup-screen');
+      showErr('Error: '+err.message);
+    }
   }
 }
 

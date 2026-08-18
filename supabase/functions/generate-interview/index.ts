@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const CLAUDE_MODEL = "claude-opus-4-7";
+const CLAUDE_MODEL = "claude-sonnet-5";
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 
 const cors = {

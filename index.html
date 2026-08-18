@@ -1139,7 +1139,8 @@ function initVoice() {
   if (!SR) return;
   $el('mic-btn').classList.remove('hidden');
   recognition=new SR();
-  recognition.continuous=true; recognition.interimResults=false; recognition.lang='en-US';
+  const isSafari=!window.SpeechRecognition&&!!window.webkitSpeechRecognition;
+  recognition.continuous=!isSafari; recognition.interimResults=false; recognition.lang='en-US';
   recognition.onresult=(event)=>{
     let final='';
     for (let i=event.resultIndex;i<event.results.length;i++){
@@ -1152,7 +1153,16 @@ function initVoice() {
     }
   };
   recognition.onerror=(e)=>{ if(e.error!=='no-speech') showToast('Mic error: '+e.error); stopVoice(); };
-  recognition.onend=()=>{ if(isListening) recognition.start(); };
+  recognition.onend=()=>{
+    if (!isListening) return;
+    try { recognition.start(); }
+    catch(_) {
+      // Safari blocks auto-restart — update button to prompt user to tap again
+      $el('mic-btn-text').textContent='Tap to continue';
+      $el('mic-btn').classList.remove('recording');
+      isListening=false;
+    }
+  };
 }
 
 function toggleVoice() { if (isListening) stopVoice(); else startVoice(); }

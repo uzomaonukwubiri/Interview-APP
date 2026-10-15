@@ -1111,11 +1111,25 @@ function updateTotalUI(s) {
 function autoSkip() {
   const q=state.questions[state.currentIndex];
   const ans=$el('answer-input').value.trim();
+  if (isListening) stopVoice();
+  if (ans) {
+    // Time's up but they wrote something: submit it so they still get feedback
+    showToast("Time's up! Submitting your answer for feedback…");
+    handleSubmit();
+    return;
+  }
+  showToast("Time's up! Moving to the next question.");
   state.answers.push({questionId:q.id,answer:ans||'(Time expired — no answer submitted)',timeTaken:state.timePerQuestion*60,skipped:!ans});
   advance();
 }
 
 async function handleSubmit() {
+  if (state.submitting) return;
+  state.submitting = true;
+  try { await doSubmit(); } finally { state.submitting = false; }
+}
+
+async function doSubmit() {
   clearInterval(state.questionTimerId);
   const q=state.questions[state.currentIndex], answer=$el('answer-input').value.trim();
   const elapsed=Math.round((Date.now()-state.questionStarted)/1000);
@@ -1128,8 +1142,15 @@ async function handleSubmit() {
       state.feedbacks.push(fb);
       showFeedbackScreen(fb, q, answer);
     } catch(err) {
-      state.feedbacks.push({questionId:q.id,score:0,what_went_well:'N/A',what_was_missed:'N/A',how_to_improve:'N/A'});
-      advance();
+      console.error('Feedback failed:', err);
+      const fb={questionId:q.id,score:0,feedbackError:true,
+        what_went_well:"Feedback couldn't be loaded for this answer.",
+        what_was_missed:'Reason: '+err.message,
+        how_to_improve:'Your answer was saved. Click "Try Again" to answer this question again, or move on to the next question.'};
+      state.feedbacks = state.feedbacks.filter(f=>f.questionId!==q.id);
+      state.feedbacks.push(fb);
+      showFeedbackScreen(fb, q, answer);
+      showToast('Feedback failed: '+err.message, 6000);
     }
     btn.disabled=false;
     btn.innerHTML='Submit Answer <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
@@ -1146,7 +1167,7 @@ async function getFeedback(q, answer) {
 function showFeedbackScreen(fb, q, answer) {
   state.currentQ = q; state.currentAnswer = answer; state.sampleLoaded = false;
   const score=fb.score||0,el=$el('feedback-score-circle');
-  $el('feedback-score-num').textContent=score;
+  $el('feedback-score-num').textContent=fb.feedbackError?'–':score;
   el.removeAttribute('data-score');
   if(score>=8) el.setAttribute('data-score','good');
   else if(score>=5) el.setAttribute('data-score','average');
@@ -1284,8 +1305,9 @@ async function genAllFeedback() {
 }
 
 function avgScore() {
-  if(!state.feedbacks.length) return 0;
-  return state.feedbacks.reduce((a,fb)=>a+(fb.score||0),0)/state.feedbacks.length;
+  const scored = state.feedbacks.filter(fb=>!fb.feedbackError);
+  if(!scored.length) return 0;
+  return scored.reduce((a,fb)=>a+(fb.score||0),0)/scored.length;
 }
 
 async function renderResults() {

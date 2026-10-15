@@ -158,6 +158,8 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
 .badge.technical{background:rgba(139,92,246,.12);color:#7c3aed;}
 .badge.behavioral{background:rgba(16,185,129,.12);color:#059669;}
 .badge.retry{background:rgba(245,158,11,.12);color:#b45309;}
+.badge.custom{background:rgba(14,165,233,.12);color:#0369a1;}
+.custom-count{display:inline-block;margin-top:6px;font-size:.75rem;font-weight:600;color:var(--primary);}
 #question-number-label{font-size:.82rem;color:var(--text-muted);font-weight:500;}
 .question-timer-block{display:flex;align-items:center;gap:10px;}
 .question-timer-bar-wrap{width:130px;height:7px;background:var(--border);border-radius:4px;overflow:hidden;}
@@ -342,9 +344,14 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
       <div class="section-label">Job Details</div>
 
       <div class="form-group">
-        <label for="job-url"><span class="label-icon">🔗</span> Job Description URL</label>
+        <label for="job-url"><span class="label-icon">🔗</span> Job Description URL <span class="label-opt">(optional)</span></label>
         <input type="url" id="job-url" placeholder="https://company.com/careers/role" />
-        <span class="field-hint">Paste the link to the job posting you're interviewing for.</span>
+        <span class="field-hint">Paste the link to the job posting. Some sites (LinkedIn, Workday) block reading, so pasting the text below is more reliable.</span>
+
+        <div class="or-divider">and / or paste the job description text</div>
+
+        <textarea id="job-text" class="form-input" rows="6" placeholder="Paste the full job description here: responsibilities, qualifications, required skills..."></textarea>
+        <span class="field-hint">If you give both, the pasted text is used as the main source and the link as extra context.</span>
       </div>
 
       <div class="form-group">
@@ -369,6 +376,26 @@ input::placeholder,textarea::placeholder{color:var(--slate-light);}
 
         <textarea id="resume-input" class="form-input" rows="4" placeholder="Paste your resume text here — work experience, skills, education..."></textarea>
         <span class="field-hint">Adding your resume makes questions much more relevant to your actual background.</span>
+      </div>
+    </div>
+
+    <div class="setup-card">
+      <div class="section-label">Your Own Questions</div>
+
+      <div class="form-group">
+        <label for="custom-questions"><span class="label-icon">✍️</span> Write Your Own Questions <span class="label-opt">(optional)</span></label>
+        <textarea id="custom-questions" class="form-input" rows="5" placeholder="One question per line, for example:&#10;Tell me about a time you managed a study with a tight timeline.&#10;How do you handle a data discrepancy found during a sponsor audit?&#10;Why do you want to work here?"></textarea>
+        <span id="custom-count" class="custom-count hidden"></span>
+        <span class="field-hint">Questions a recruiter told you about, or ones you know you struggle with. Saved on this device so you don't have to retype them.</span>
+      </div>
+
+      <div class="form-group">
+        <label><span class="label-icon">🎛️</span> How to Use Them</label>
+        <div class="button-group" id="custom-mode-group">
+          <button class="btn-option active" data-value="mix">Add to AI questions</button>
+          <button class="btn-option" data-value="only">Only my questions</button>
+        </div>
+        <span class="field-hint">"Add to AI questions" asks yours first, then the AI questions. "Only my questions" skips the AI questions, so no job description is needed.</span>
       </div>
     </div>
 
@@ -677,7 +704,8 @@ if (typeof pdfjsLib !== 'undefined') {
 }
 
 const state = {
-  jobUrl:'', jobContent:'', resumeContent:'',
+  jobUrl:'', jobText:'', jobContent:'', resumeContent:'',
+  customQuestions:[], customMode:'mix',
   questionType:'mix', numQuestions:10,
   timePerQuestion:2, totalTime:30, feedbackTiming:'after_each',
   questions:[], answers:[], feedbacks:[],
@@ -809,12 +837,41 @@ function initSetup() {
     handleResumeFile(e.dataTransfer.files[0]);
   });
 
+  // Custom questions: restore saved draft, live count, autosave
+  try { $el('custom-questions').value = localStorage.getItem('mockprep_custom_questions') || ''; } catch(_){}
+  $el('custom-questions').addEventListener('input', () => {
+    updateCustomCount();
+    try { localStorage.setItem('mockprep_custom_questions', $el('custom-questions').value); } catch(_){}
+  });
+  updateCustomCount();
+
   renderHistory();
+}
+
+function parseCustomQuestions(text) {
+  return text.split('\n')
+    .map(l => l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim())
+    .filter(l => l.length > 3);
+}
+
+function updateCustomCount() {
+  const n = parseCustomQuestions($el('custom-questions').value).length;
+  const c = $el('custom-count');
+  if (n) { c.textContent = n+' question'+(n!==1?'s':'')+' ready'; c.classList.remove('hidden'); }
+  else c.classList.add('hidden');
+}
+
+function guessType(q) {
+  return /^(tell me about a time|describe a (time|situation)|give (me )?an example|walk me through a time|share an experience|have you ever)/i.test(q)
+    ? 'behavioral' : 'custom';
 }
 
 function getVals() {
   return {
     jobUrl: $el('job-url').value.trim(),
+    jobText: $el('job-text').value.trim(),
+    customQuestions: parseCustomQuestions($el('custom-questions').value),
+    customMode: document.querySelector('#custom-mode-group .btn-option.active')?.dataset.value || 'mix',
     resumeContent: $el('resume-input').value.trim(),
     questionType: document.querySelector('#question-type-group .btn-option.active')?.dataset.value || 'mix',
     numQuestions: parseInt(document.querySelector('#num-questions-group .btn-option.active')?.dataset.value || 10),
@@ -829,17 +886,29 @@ function showErr(msg) { const e=$el('setup-error'); e.textContent=msg; e.classLi
 async function handleStart() {
   $el('setup-error').classList.add('hidden');
   const v = getVals();
-  if (!v.jobUrl) return showErr('Please enter the job description URL.');
+  const onlyMine = v.customMode==='only';
+  if (onlyMine && !v.customQuestions.length)
+    return showErr('You chose "Only my questions" but haven\'t written any. Add at least one question, one per line.');
+  if (!onlyMine && !v.jobUrl && !v.jobText)
+    return showErr('Add a job description link or paste the job description text (or switch to "Only my questions").');
+  if (v.jobUrl && !/^https?:\/\//i.test(v.jobUrl))
+    return showErr('The job link should start with http:// or https://');
   Object.assign(state, v);
   state.questions=[];state.answers=[];state.feedbacks=[];state.currentIndex=0;
   state.overallSummary='';state.attemptCounts={};state.isRetrying=false;
   showScreen('loading-screen');
   try {
     setStep('step-fetch','active');
-    state.jobContent = await fetchJob(v.jobUrl);
+    state.jobContent = await buildJobContent(v);
     setStep('step-fetch','done');
     setStep('step-generate','active');
-    state.questions = await genQuestions();
+    const mine = v.customQuestions.map((q,i)=>({ id:i+1, type:guessType(q), question:q, custom:true }));
+    let ai = [];
+    if (!onlyMine) {
+      ai = (await genQuestions()).map((q,i)=>({ ...q, id:mine.length+i+1 }));
+    }
+    state.questions = [...mine, ...ai];
+    state.numQuestions = state.questions.length;
     setStep('step-generate','done');
     setStep('step-ready','active');
     await new Promise(r => setTimeout(r, 600));
@@ -861,6 +930,19 @@ async function handleStart() {
 }
 
 function setStep(id, s) { const e=$el(id); e.classList.remove('active','done'); if(s) e.classList.add(s); }
+
+async function buildJobContent(v) {
+  if (v.jobText) {
+    return v.jobText.slice(0, 8000) + (v.jobUrl ? '\n\nJob posting URL: '+v.jobUrl : '');
+  }
+  if (v.jobUrl) {
+    const t = await fetchJob(v.jobUrl);
+    if (t.startsWith('Job posting URL:'))
+      showToast("Couldn't read that page, so questions are based on the link only. For better questions, paste the job text.", 6000);
+    return t;
+  }
+  return 'No job description provided. Evaluate answers as a general professional interview, using the candidate background if available.';
+}
 
 async function fetchJob(url) {
   try {
@@ -902,6 +984,7 @@ function saveSession() {
   sessions.unshift({
     date: new Date().toISOString(),
     jobUrl: state.jobUrl,
+    jobLabel: state.jobUrl ? '' : (state.jobText ? (state.jobText.split('\n').find(l=>l.trim())||'Pasted job description').trim().slice(0,60) : 'My own questions'),
     numQuestions: state.numQuestions,
     answered: state.answers.filter(a=>!a.skipped).length,
     avgScore: parseFloat(avg.toFixed(1)),
@@ -917,7 +1000,7 @@ function renderHistory() {
   list.innerHTML = '';
   sessions.slice(0,5).forEach(s => {
     const date = new Date(s.date).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-    const host = (() => { try { return new URL(s.jobUrl).hostname.replace('www.',''); } catch(_){ return s.jobUrl; } })();
+    const host = s.jobLabel || (() => { try { return new URL(s.jobUrl).hostname.replace('www.',''); } catch(_){ return s.jobUrl || 'Interview'; } })();
     const gc = gradeClass(s.pct);
     const item = document.createElement('div');
     item.className = 'history-item';
@@ -962,8 +1045,9 @@ function displayQ(idx) {
   $el('question-text').textContent=q.question;
   $el('answer-input').value=''; $el('word-count').textContent='0 words';
   const b=$el('question-type-badge');
-  b.textContent=q.type==='technical'?'Technical':'Behavioral';
-  b.className='badge '+q.type;
+  const badgeType = q.custom && q.type!=='behavioral' ? 'custom' : q.type;
+  b.textContent = q.custom ? (q.type==='behavioral'?'Your Question · Behavioral':'Your Question') : (q.type==='technical'?'Technical':'Behavioral');
+  b.className='badge '+badgeType;
 
   const retries = state.attemptCounts[q.id] || 0;
   const retryBadge = $el('retry-badge');
